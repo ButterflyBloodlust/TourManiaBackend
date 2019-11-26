@@ -26,6 +26,9 @@ urlpatterns = [
     path('mongo_auth/login/', views.login),
     path('tour/upsert/', views.upsert_tour),
     path('tour/images/upsert/', views.upsert_tour_images),
+    path('tour/<username>/', views.get_tours_by_user),
+    path('tour/images/by_id/', views.get_tour_images_by_tour_ids),
+    path('tour/delete/<_id>/', views.delete_tour_by_id),
 
     path('get_test/', views.get_test),
     path('hello/', views.get_hello),
