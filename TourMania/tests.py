@@ -53,7 +53,18 @@ def db_binary_img_to_base64():
             #    print(prop_k)
 
 
+def db_text_search(phrase):
+    docs = database[tours_collection].find(
+        {'$text': {'$search': phrase}}, {'score': {'$meta': "textScore"}, 'wpsWPics': 0, 'tags': 0}).sort(
+        [('score', {'$meta': "textScore"})])
+    resp_list = []
+    for doc in docs:
+        doc['_id'] = str(doc['_id'])
+        resp_list.append(doc)
+    print(resp_list)
+
+
 if __name__ == "__main__":
     database = connect_to_db()
-    db_binary_img_to_base64()
+    db_text_search("stadion")
 
