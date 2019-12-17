@@ -5,9 +5,12 @@ import urllib.parse
 from TourManiaBackend.settings import MANGO_JWT_SETTINGS
 from bson.objectid import ObjectId
 import base64
+import pprint
 
 tours_collection = "tours"
 tour_images_collection = "tour_images"
+user_details_collection = "user_details"
+test_collection = "test_collection"
 
 
 def connect_to_db():
@@ -64,7 +67,40 @@ def db_text_search(phrase):
     print(resp_list)
 
 
+def db_nearby_tour_guides():
+    docs = database[user_details_collection].aggregate([
+        {
+            "$match": {
+                "$and": [{"prefs.is_guide": True}]
+            }
+        },
+
+        # Join with user_info table
+        {
+            "$lookup": {
+                "from": tours_collection,  # other table name
+                "localField": "usr_id",  # name of users table field
+                "foreignField": "usr_id",  # name of other table field
+                "as": "tours"  # alias for other table
+            }
+        },
+        # {"$unwind": "$tours"},  # "$unwind" used for getting data in object or for one record only
+
+        # $geoNear has to be first stage (possibly after match. Need to denormalize db structure (tours directly inside user details)
+        {
+            "$geoNear": {
+                "near": [0.0, 0.0],
+                "distanceField": "dist.calculated"
+            }
+        }
+    ])
+
+    pp = pprint.PrettyPrinter()
+    for doc in docs:
+        pp.pprint(doc)
+
+
 if __name__ == "__main__":
     database = connect_to_db()
-    db_text_search("stadion")
+    db_nearby_tour_guides()
 
