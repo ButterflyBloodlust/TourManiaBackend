@@ -67,7 +67,7 @@ def db_text_search(phrase):
     print(resp_list)
 
 
-def db_nearby_tour_guides():
+def db_join_user_details_with_tours():
     docs = database[user_details_collection].aggregate([
         {
             "$match": {
@@ -85,15 +85,33 @@ def db_nearby_tour_guides():
             }
         },
         # {"$unwind": "$tours"},  # "$unwind" used for getting data in object or for one record only
+    ])
 
-        # $geoNear has to be first stage (possibly after match. Need to denormalize db structure (tours directly inside user details)
+    pp = pprint.PrettyPrinter()
+    for doc in docs:
+        pp.pprint(doc)
+
+
+def db_nearby_tour_guides_using_aggregation():
+    docs = database[user_details_collection].aggregate([
+        # $geoNear has to be first stage in aggregation pipeline
         {
             "$geoNear": {
+                "query": {"prefs.is_guide": True},
                 "near": [0.0, 0.0],
                 "distanceField": "dist.calculated"
             }
         }
     ])
+
+    pp = pprint.PrettyPrinter()
+    for doc in docs:
+        pp.pprint(doc)
+
+
+def db_nearby_tour_guides():
+    docs = database[user_details_collection].find({"prefs.is_guide": True, "tours_locs.loc": {"$near": [0.0, 0.0]}},
+                                                  {"_id": 0, "name": 1})
 
     pp = pprint.PrettyPrinter()
     for doc in docs:

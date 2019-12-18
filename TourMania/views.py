@@ -63,7 +63,7 @@ def login(request):
                                         days=jwt_life)},
                                    jwt_secret, algorithm='HS256').decode('utf-8')
                 user_prefs = database[user_details_collection].find_one({"usr_id": user['id']}, {"_id": 0, "prefs": 1})
-                user_prefs = user_prefs['prefs'] if "prefs" in user_prefs else {}
+                user_prefs = user_prefs['prefs'] if user_prefs is not None and "prefs" in user_prefs else {}
                 return Response(status=status.HTTP_200_OK,
                                 data={"data": {"token": token, "prefs": user_prefs}})
             else:
@@ -96,25 +96,39 @@ def upsert_tour(request):
                                              request.data["wpsWPics"][0]["tourWp"]["latitude"]]
 
     if len(tour_id) == 24:
-        update_result = database[tours_collection].update_one(
+        result = database[tours_collection].update_one(
             {"_id": ObjectId(tour_id), "usr_id": request.user["id"]},
             {"$set": {"usr_id": request.user["id"],
                       "tour": request.data["tour"],
                       "wpsWPics": request.data["wpsWPics"],
                       "tags": request.data["tags"]}}).upserted_id
-        if update_result is None:
+        if result is None:
             data = {}
         else:
-            data = {"tourServerId": str(update_result)}
+            data = {"tourServerId": str(result)}
+
+        if "start_loc" in request.data["tour"]:
+            database[user_details_collection].update_one({"usr_id": request.user["id"], "tours_locs.tour_id": ObjectId(tour_id)},
+                                                         {"$set": {
+                                                             "tours_locs.$.loc": request.data["tour"]["start_loc"]}})
     else:
-        insert_result = database[tours_collection].insert_one({"usr_id": request.user["id"],
+        result = database[tours_collection].insert_one({"usr_id": request.user["id"],
                                                                "tour": request.data["tour"],
                                                                "wpsWPics": request.data["wpsWPics"],
                                                                "tags": request.data["tags"]}).inserted_id
-        if insert_result is None:
+        if result is None:
             data = {}
         else:
-            data = {"tourServerId": str(insert_result)}
+            data = {"tourServerId": str(result)}
+
+        if "start_loc" in request.data["tour"]:
+            database[user_details_collection].update_one({"usr_id": request.user["id"]},
+                                                         {"$push": {
+                                                             "tours_locs": {
+                                                                 "tour_id": result,
+                                                                 "loc": request.data["tour"]["start_loc"]}}},
+                                                         upsert=True)
+    print("> result : {}".format(result))
     # print(data)
     return Response(status=status.HTTP_200_OK, data=data)
 
@@ -250,6 +264,12 @@ def delete_tour_by_id(request, _id):
         print('deleted records: {}'.format(delete_result.deleted_count))
         if delete_result.deleted_count > 0:
             database[tour_images_collection].remove({'trSrvrId': _id})
+            database[user_details_collection].update_one({"usr_id": request.user["id"]},
+                                                         {"$pull": {
+                                                             "tours_locs": {
+                                                                 "tour_id": ObjectId(_id)
+                                                             }
+                                                         }})
             return Response(status=status.HTTP_200_OK)
         return Response(status=status.HTTP_400_BAD_REQUEST)
 
@@ -350,7 +370,7 @@ def get_nearby_tours(request):
 @permission_classes([AuthenticatedOnly])
 def update_user_settings(request):
     print("add_tour_to_favourites : {}".format(request.data))
-    prefs_dict = {}
+    prefs_dict = {"name": request.user['nickname']}
     if 'is_guide' in request.data:
         is_guide = True if request.data.get('is_guide')[0] == 't' else False
         prefs_dict["prefs.is_guide"] = is_guide
@@ -365,10 +385,7 @@ def update_user_settings(request):
 
 
 @api_view(["POST"])
-def get_tour_guides(request):
-    # TODO implement this endpoint
-    docs = database[user_details_collection].find({"prefs.is_guide": True}, {"usr_id": 1})
-    docs = database[tours_collection].find({"tour.start_loc": {"$near": [float(request.query_params.get('long')),
-                                                                         float(request.query_params.get('lat'))]}},
-                                           {'wpsWPics': 0, 'tags': 0, 'usr_id': 0})
+def get_nearby_tour_guides(request):
+    docs = database[user_details_collection].find({"prefs.is_guide": True, "tours_locs.loc": {"$near": [0.0, 0.0]}},
+                                                  {"_id": 0, "name": 1})
     return Response(status=status.HTTP_200_OK)

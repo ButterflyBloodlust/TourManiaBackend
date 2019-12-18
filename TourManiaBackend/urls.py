@@ -37,6 +37,7 @@ urlpatterns = [
     path('user/favs/delete/<tour_id>/', views.delete_tour_from_favourites),
     path('user/<username>/favs/', views.get_fav_tours_by_user),
     path('user/prefs/', views.update_user_settings),
+    path('tour_guides/nearby/', views.get_nearby_tour_guides),
 
     path('get_test/', views.get_test),
     path('hello/', views.get_hello),
