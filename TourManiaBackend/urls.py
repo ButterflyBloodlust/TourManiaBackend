@@ -29,6 +29,7 @@ urlpatterns = [
     path('tour/id/<_id>', views.get_tour_by_tour_id),
     path('tour/i/id/<tour_id>/', views.get_tour_images_by_tour_id),
     path('tour/u/<username>/', views.get_tours_by_user),
+    path('tour/u/<username>/overviews', views.get_nearby_tours_overviews_by_user),
     path('tour/images/by_id/', views.get_tour_images_by_tour_ids),
     path('tour/delete/<_id>/', views.delete_tour_by_id),
     path('tour/search/<phrase>', views.search_tours_by_phrase),
@@ -37,7 +38,8 @@ urlpatterns = [
     path('user/favs/delete/<tour_id>/', views.delete_tour_from_favourites),
     path('user/<username>/favs/', views.get_fav_tours_by_user),
     path('user/prefs/', views.update_user_settings),
-    path('tour_guides/nearby/', views.get_nearby_tour_guides),
+    path('tour_guide/near', views.get_nearby_tour_guides),
+    path('tour_guide', views.get_tour_guide_info),
 
     path('get_test/', views.get_test),
     path('hello/', views.get_hello),

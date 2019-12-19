@@ -199,7 +199,7 @@ def get_tour_images_by_tour_id(request, tour_id):
         docs = database[tour_images_collection].find({'trSrvrId': tour_id}, {'_id': 0, 'usr_id': 0})
         resp_list = []
         for doc in docs:
-            print('get_tour_images_by_tour_ids : {}'.format(doc['trSrvrId']))
+            # print('get_tour_images_by_tour_id : {}'.format(doc['trSrvrId']))
             imgs = doc["imgs"]
             for (k, v) in imgs.items():
                 if 'b' in v:
@@ -245,7 +245,7 @@ def get_tour_images_by_tour_ids(request):  # including given obj ids
     docs = database[tour_images_collection].find({'trSrvrId': {'$in': request.data}}, {'_id': 0, 'usr_id': 0})
     resp_list = []
     for doc in docs:
-        print('get_tour_images_by_tour_ids : {}'.format(doc['trSrvrId']))
+        # print('get_tour_images_by_tour_ids : {}'.format(doc['trSrvrId']))
         imgs = doc["imgs"]
         for (k, v) in imgs.items():
             if 'b' in v:
@@ -370,7 +370,7 @@ def get_nearby_tours(request):
 @permission_classes([AuthenticatedOnly])
 def update_user_settings(request):
     print("add_tour_to_favourites : {}".format(request.data))
-    prefs_dict = {"name": request.user['nickname']}
+    prefs_dict = {"nickname": request.user['nickname'], "email": request.user['email']}
     if 'is_guide' in request.data:
         is_guide = True if request.data.get('is_guide')[0] == 't' else False
         prefs_dict["prefs.is_guide"] = is_guide
@@ -384,8 +384,59 @@ def update_user_settings(request):
     return Response(status=status.HTTP_200_OK)
 
 
-@api_view(["POST"])
+@api_view(["GET"])
 def get_nearby_tour_guides(request):
-    docs = database[user_details_collection].find({"prefs.is_guide": True, "tours_locs.loc": {"$near": [0.0, 0.0]}},
-                                                  {"_id": 0, "name": 1})
-    return Response(status=status.HTTP_200_OK)
+    page_size = 10
+    page_num = int(request.query_params['page_num'])
+    docs = database[user_details_collection].aggregate([
+        # $geoNear has to be first stage in aggregation pipeline
+        {
+            "$geoNear": {
+                "query": {"prefs.is_guide": True},
+                "near": [float(request.query_params.get('long')), float(request.query_params.get('lat'))],
+                "distanceField": "dist.calculated",
+                "key": "tours_locs.loc"
+            }
+        },
+        {"$skip": ((page_num - 1) * page_size) if page_num > 0 else 0},
+        {"$limit": page_size},
+        {
+            "$project": {"_id": 0, "nickname": 1}  # "email": 1, "phone_num": "$prefs.phone_num"
+        }
+    ])
+    return Response(status=status.HTTP_200_OK, data=list(docs))
+
+
+@api_view(["GET"])
+def get_tour_guide_info(request):
+    tour_guide_nickname = request.query_params['nickname']
+    docs = database[user_details_collection].aggregate([
+        {"$match": {'nickname': tour_guide_nickname}},
+        {"$limit": 1},
+        {"$project": {"_id": 0, "email": 1, "phone_num": "$prefs.phone_num"}}
+    ])
+    response_list = list(docs)
+    return Response(status=status.HTTP_200_OK, data=(response_list[0] if len(response_list) > 0 else {}))
+
+
+@api_view(["GET"])
+def get_nearby_tours_overviews_by_user(request, username):  # with pagination
+    page_size = 10
+    page_num = int(request.query_params['page_num'])
+
+    # Get user id based on username
+    docs = database[user_profile_collection].find_one({'nickname': username}, {'id': 1})
+
+    docs = database[tours_collection].find({'usr_id': docs['id'],
+                                            "tour.start_loc": {"$near": [float(request.query_params.get('long')),
+                                                                         float(request.query_params.get('lat'))]}},
+                                           {'wpsWPics': 0, 'tags': 0, 'usr_id': 0})\
+        .skip(((page_num - 1) * page_size) if page_num > 0 else 0).limit(page_size)
+
+    docs = list(docs)
+    for doc in docs:
+        doc["tour"]["trSrvrId"] = str(doc["_id"])
+        del doc["_id"]
+
+    print('get_nearby_tours_overviews_by_user {}'.format(docs))
+    return Response(status=status.HTTP_200_OK, data=docs)

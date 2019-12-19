@@ -6,6 +6,7 @@ from TourManiaBackend.settings import MANGO_JWT_SETTINGS
 from bson.objectid import ObjectId
 import base64
 import pprint
+import time
 
 tours_collection = "tours"
 tour_images_collection = "tour_images"
@@ -99,8 +100,12 @@ def db_nearby_tour_guides_using_aggregation():
             "$geoNear": {
                 "query": {"prefs.is_guide": True},
                 "near": [0.0, 0.0],
-                "distanceField": "dist.calculated"
+                "distanceField": "dist.calculated",
+                "key": "tours_locs.loc"
             }
+        },
+        {
+            "$project": {"_id": 0, "nickname": 1, "phone_num": "$prefs.phone_num"}
         }
     ])
 
@@ -111,14 +116,29 @@ def db_nearby_tour_guides_using_aggregation():
 
 def db_nearby_tour_guides():
     docs = database[user_details_collection].find({"prefs.is_guide": True, "tours_locs.loc": {"$near": [0.0, 0.0]}},
-                                                  {"_id": 0, "name": 1})
+                                                  {"_id": 0, "nickname": 1, "prefs.phone_num": 1})
 
     pp = pprint.PrettyPrinter()
     for doc in docs:
         pp.pprint(doc)
 
 
+def db_get_tour_guide_info():
+    tour_guide_nickname = "asd"
+    docs = database[user_details_collection].aggregate([
+        {"$match": {'nickname': tour_guide_nickname}},
+        {"$limit": 1},
+        {"$project": {"_id": 0, "email": 1, "phone_num": "$prefs.phone_num"}}
+    ])
+    pp = pprint.PrettyPrinter()
+    pp.pprint(docs.next())
+
+
 if __name__ == "__main__":
     database = connect_to_db()
-    db_nearby_tour_guides()
+
+    start = time.clock()
+    db_get_tour_guide_info()
+    end = time.clock()
+    print("Operation time: {} s".format(end - start))
 
