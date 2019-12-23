@@ -1,5 +1,6 @@
+import traceback
+
 from django.shortcuts import render
-from mongo_auth.permissions import AuthenticatedOnly
 from rest_framework.decorators import permission_classes, api_view
 from mongo_auth.utils import create_unique_object_id, pwd_context
 from mongo_auth.db import database, auth_collection, fields, jwt_life, jwt_secret, secondary_username_field
@@ -12,11 +13,8 @@ from rest_framework.exceptions import ValidationError
 from bson.objectid import ObjectId
 from bson.binary import Binary, BINARY_SUBTYPE
 import base64
-
-tours_collection = "tours"
-tour_images_collection = "tour_images"
-user_details_collection = "user_details"
-user_profile_collection = "user_profile"
+from TourMania.permissions import AuthenticationOptional, AuthenticatedOnly
+from TourMania.db_collections import *
 
 
 @api_view(["GET"])
@@ -53,17 +51,17 @@ def login(request):
         data = request.data if request.data is not None else {}
         username = data['username']
         password = data['password']
-        user = database[auth_collection].find_one({"email": username}, {"_id": 0})
+        user = database[user_details_collection].find_one({"email": username}, {"_id": 0})
         if user is None:
-            user = database[auth_collection].find_one({secondary_username_field: username}, {"_id": 0})
+            user = database[user_details_collection].find_one({secondary_username_field: username}, {"_id": 0})
         if user is not None:
-            if pwd_context.verify(password, user["password"]):
-                token = jwt.encode({'id': user['id'],
+            user_pswd_doc = database[auth_collection].find_one({"id": user["usr_id"]}, {"_id": 0})
+            if pwd_context.verify(password, user_pswd_doc["password"]):
+                token = jwt.encode({'id': user['usr_id'],
                                     'exp': datetime.datetime.now() + datetime.timedelta(
                                         days=jwt_life)},
                                    jwt_secret, algorithm='HS256').decode('utf-8')
-                user_prefs = database[user_details_collection].find_one({"usr_id": user['id']}, {"_id": 0, "prefs": 1})
-                user_prefs = user_prefs['prefs'] if user_prefs is not None and "prefs" in user_prefs else {}
+                user_prefs = user['prefs'] if "prefs" in user else {}
                 return Response(status=status.HTTP_200_OK,
                                 data={"data": {"token": token, "prefs": user_prefs}})
             else:
@@ -75,21 +73,67 @@ def login(request):
     except ValidationError as v_error:
         return Response(status=status.HTTP_400_BAD_REQUEST,
                         data={'success': False, 'message': str(v_error)})
-    #except Exception as e:
-    #    return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #                    data={"data": {"error_msg": str(e)}})
+    except Exception as e:
+        traceback.print_exc()
+        return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        data={"data": {"error_msg": str(e)}})
+
+
+'''
+    Modified version of mango-jwt signup api endpoint. Mango-jwt is distributed under MIT license.
+'''
+@api_view(["POST"])
+def signup(request):
+    try:
+        data = request.data if request.data is not None else {}
+        if "password" not in data:
+            return Response(status=status.HTTP_400_BAD_REQUEST,
+                            data={"error_msg": "password does not exist."})
+        signup_user_id = create_unique_object_id()
+        signup_pswd_data = {"id": signup_user_id}
+        signup_details_data = {"usr_id": signup_user_id}
+        for field in set(fields + ("email",)):
+            if field in data:
+                signup_details_data[field] = data[field]
+            else:
+                return Response(status=status.HTTP_400_BAD_REQUEST,
+                                data={"error_msg": field.title() + " does not exist."})
+        signup_pswd_data["password"] = pwd_context.hash(data["password"])
+
+        if database[user_details_collection].find_one({"email": signup_details_data['email']}) is None:
+            if secondary_username_field:
+                if database[user_details_collection].find_one({secondary_username_field: signup_details_data[secondary_username_field]}) is None:
+                    database[auth_collection].insert_one(signup_pswd_data)
+                    database[user_details_collection].insert_one(signup_details_data)
+                    res = {k: v for k, v in signup_details_data.items() if k not in ["_id", "password"]}
+                    return Response(status=status.HTTP_200_OK,
+                                    data={"data": res})
+                else:
+                    return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED,
+                                    data={"data": {"error_msg": messages.user_exists_field(secondary_username_field)}})
+            else:
+                database[auth_collection].insert_one(signup_pswd_data)
+                database[user_details_collection].insert_one(signup_details_data)
+                res = {k: v for k, v in signup_details_data.items() if k not in ["_id", "password"]}
+                return Response(status=status.HTTP_200_OK,
+                                data={"data": res})
+        else:
+            return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED,
+                            data={"data": {"error_msg": messages.user_exists}})
+    except ValidationError as v_error:
+        return Response(status=status.HTTP_400_BAD_REQUEST,
+                        data={'success': False, 'message': str(v_error)})
+    except Exception as e:
+        traceback.print_exc()
+        return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        data={"data": {"error_msg": str(e)}})
 
 
 @api_view(["POST"])
 @permission_classes([AuthenticatedOnly])
 def upsert_tour(request):
-    # print(request.headers)
-    # print(request.data)
-    # print(request.user)
     tour_id = request.data["tour"]["trSrvrId"]
     del request.data["tour"]["trSrvrId"]
-    # tours_collection
-    # 'text_search_test'
 
     if len(request.data["wpsWPics"]) > 0:
         request.data["tour"]["start_loc"] = [request.data["wpsWPics"][0]["tourWp"]["longitude"],
@@ -162,28 +206,32 @@ def upsert_tour_images(request):
 
 
 @api_view(["GET"])
+@permission_classes([AuthenticationOptional])
 def get_tour_by_tour_id(request, _id):
     if len(_id) == 24:
-        doc = database[tours_collection].find_one({'_id': ObjectId(_id)}, {'usr_id': 0})
+        doc = database[tours_collection].find_one({'_id': ObjectId(_id)})
         doc['tour']['trSrvrId'] = str(doc['_id'])
         del doc['_id']
 
-        if 'username' in request.query_params:
-            username = request.query_params['username']
-            print('get_tour_by_tour_id username : {}'.format(username))
+        doc['author'] = {}
+        doc['author']['nickname'] = database[user_details_collection].find_one({'usr_id': doc['usr_id']})['nickname']
+        del doc['usr_id']
 
-            # Get user id based on username
-            user_id_doc = database[user_profile_collection].find_one({'nickname': username}, {'id': 1})
-            print('get_tour_by_tour_id user id : {}'.format(user_id_doc['id']))
-
+        if request.user is not None:
+            # Check if tour is in given username favourites
             # Get favourite tours
-            is_fav_doc = database[user_details_collection].distinct('fav_trs', {'usr_id': user_id_doc['id']})
+            is_fav_doc = database[user_details_collection].distinct('fav_trs', {'usr_id': request.user['id']})
             print('get_tour_by_tour_id fav : {}'.format(len(is_fav_doc)))
 
             if len(is_fav_doc) > 0:
                 doc['tour']['in_favs'] = True
             else:
                 doc['tour']['in_favs'] = False
+
+            # Get personal tour rating
+            rating_doc = database[tour_ratings_collection].find_one({"usr_id": request.user['id'], "tour_id": ObjectId(_id)})
+            if rating_doc is not None:
+                doc['tour']['rating'] = rating_doc['rating']
 
         print('get_tour_by_id : {}'.format(doc))
         return Response(status=status.HTTP_200_OK, data=doc)
@@ -212,27 +260,27 @@ def get_tour_images_by_tour_id(request, tour_id):
 
 
 @api_view(["POST"])
-def get_tours_by_user(request, username):  # excluding given obj ids
+def get_full_tours_by_user(request, username):  # excluding given obj ids
     data_dict = dict(request.data)
     skip_obj_ids = []
     if 'owndToursIds' in data_dict:
         for id in data_dict['owndToursIds']:
             if len(id) == 24:
                 skip_obj_ids.append(ObjectId(id))
-        print('get_tours_by_user skip_obj_ids : {}'.format(skip_obj_ids))
+        print('get_full_tours_by_user skip_obj_ids : {}'.format(skip_obj_ids))
 
     # Get user id based on username
-    docs = database[user_profile_collection].find_one({'nickname': username}, {'id': 1})
+    docs = database[user_details_collection].find_one({'nickname': username}, {'usr_id': 1})
 
     # Get user tours based on user id and with skipping _ids from skip_obj_ids
-    docs = database[tours_collection].find({'usr_id': docs['id'], '_id': {'$nin': skip_obj_ids}}, {'usr_id': 0})
+    docs = database[tours_collection].find({'usr_id': docs['usr_id'], '_id': {'$nin': skip_obj_ids}}, {'usr_id': 0})
 
     docs = list(docs)
     for doc in docs:
         doc["tour"]["trSrvrId"] = str(doc["_id"])
         del doc["_id"]
         #del doc["username"]
-    print('get_tours_by_user {}'.format(docs))
+    print('get_full_tours_by_user {}'.format(docs))
     return Response(status=status.HTTP_200_OK, data=docs)
 
 
@@ -328,11 +376,11 @@ def get_fav_tours_by_user(request, username):  # excluding given obj ids
         print('favs skip_obj_ids : {}'.format(skip_obj_ids))
 
     # Get user id based on username
-    docs = database[user_profile_collection].find_one({'nickname': username}, {'id': 1})
-    print('favs user id : {}'.format(docs['id']))
+    docs = database[user_details_collection].find_one({'nickname': username}, {'usr_id': 1})
+    print('favs user id : {}'.format(docs['usr_id']))
 
     # Get favourite tours
-    docs = database[user_details_collection].distinct('fav_trs', {'usr_id': docs['id'], 'fav_trs': {'$nin': skip_obj_ids}})
+    docs = database[user_details_collection].distinct('fav_trs', {'usr_id': docs['usr_id'], 'fav_trs': {'$nin': skip_obj_ids}})
     print('favs : {}'.format(docs))
 
     docs = database[tours_collection].find({'_id': {'$in': docs}}, {'usr_id': 0})
@@ -370,7 +418,7 @@ def get_nearby_tours(request):
 @permission_classes([AuthenticatedOnly])
 def update_user_settings(request):
     print("add_tour_to_favourites : {}".format(request.data))
-    prefs_dict = {"nickname": request.user['nickname'], "email": request.user['email']}
+    prefs_dict = {}
     if 'is_guide' in request.data:
         is_guide = True if request.data.get('is_guide')[0] == 't' else False
         prefs_dict["prefs.is_guide"] = is_guide
@@ -401,22 +449,32 @@ def get_nearby_tour_guides(request):
         {"$skip": ((page_num - 1) * page_size) if page_num > 0 else 0},
         {"$limit": page_size},
         {
-            "$project": {"_id": 0, "nickname": 1}  # "email": 1, "phone_num": "$prefs.phone_num"
+            "$project": {"_id": 0, "nickname": 1, "rateVal": 1, "rateCount": 1}  # "email": 1, "phone_num": "$prefs.phone_num"
         }
     ])
     return Response(status=status.HTTP_200_OK, data=list(docs))
 
 
 @api_view(["GET"])
+@permission_classes([AuthenticationOptional])
 def get_tour_guide_info(request):
     tour_guide_nickname = request.query_params['nickname']
     docs = database[user_details_collection].aggregate([
         {"$match": {'nickname': tour_guide_nickname}},
         {"$limit": 1},
-        {"$project": {"_id": 0, "email": 1, "phone_num": "$prefs.phone_num"}}
+        {"$project": {"_id": 0, "usr_id": 1, "email": 1, "phone_num": "$prefs.phone_num", "rateVal": 1, "rateCount": 1}}
     ])
+
     response_list = list(docs)
-    return Response(status=status.HTTP_200_OK, data=(response_list[0] if len(response_list) > 0 else {}))
+    data = (response_list[0] if len(response_list) > 0 else {})
+
+    if request.user is not None and data:
+        # Get personal tour rating
+        rating_doc = database[tour_guide_ratings_collection].find_one({"usr_id": request.user['id'], "rtd_usr_id": data["usr_id"]})
+        if rating_doc is not None:
+            data['rating'] = rating_doc['rating']
+
+    return Response(status=status.HTTP_200_OK, data=data)
 
 
 @api_view(["GET"])
@@ -425,9 +483,9 @@ def get_nearby_tours_overviews_by_user(request, username):  # with pagination
     page_num = int(request.query_params['page_num'])
 
     # Get user id based on username
-    docs = database[user_profile_collection].find_one({'nickname': username}, {'id': 1})
+    docs = database[user_details_collection].find_one({'nickname': username}, {'usr_id': 1})
 
-    docs = database[tours_collection].find({'usr_id': docs['id'],
+    docs = database[tours_collection].find({'usr_id': docs['usr_id'],
                                             "tour.start_loc": {"$near": [float(request.query_params.get('long')),
                                                                          float(request.query_params.get('lat'))]}},
                                            {'wpsWPics': 0, 'tags': 0, 'usr_id': 0})\
@@ -440,3 +498,66 @@ def get_nearby_tours_overviews_by_user(request, username):  # with pagination
 
     print('get_nearby_tours_overviews_by_user {}'.format(docs))
     return Response(status=status.HTTP_200_OK, data=docs)
+
+
+@api_view(["POST"])
+@permission_classes([AuthenticatedOnly])
+def rate_tour(request, tour_id):
+    is_owner = (database[tours_collection].count_documents({"_id": ObjectId(tour_id), "usr_id": request.user['id']}, limit=1) != 0)
+    if is_owner:
+        return Response(status=status.HTTP_403_FORBIDDEN)
+
+    rated_before = database[tour_ratings_collection].find_one({"usr_id": request.user['id'], "tour_id": ObjectId(tour_id)})
+    new_rating = float(request.data.get("rating"))
+    if rated_before is None:
+        database[tours_collection].update_one({"_id": ObjectId(tour_id)},
+                                              {"$inc": {"tour.rateCount": 1, "tour.rateVal": new_rating}})
+    else:
+        old_rating = rated_before['rating']
+        database[tours_collection].update_one({"_id": ObjectId(tour_id)},
+                                              {"$inc": {"tour.rateVal": new_rating - old_rating}})
+
+    database[tour_ratings_collection].update_one({"usr_id": request.user['id'], "tour_id": ObjectId(tour_id)},
+                                                 {"$set": {"rating": new_rating}}, upsert=True)
+
+    return Response(status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+@permission_classes([AuthenticatedOnly])
+def rate_tour_guide(request, tour_guide_username):
+    rates_self = (tour_guide_username == request.user['nickname'])
+    if rates_self:
+        return Response(status=status.HTTP_403_FORBIDDEN)
+
+    rated_user_id = database[user_details_collection].find_one({"nickname": tour_guide_username}, {"usr_id": 1})
+    rated_before = database[tour_guide_ratings_collection].find_one({"usr_id": request.user['id'], "rtd_usr_id": rated_user_id['usr_id']})
+    new_rating = float(request.data.get("rating"))
+    if rated_before is None:
+        database[user_details_collection].update_one({"usr_id": rated_user_id['usr_id']},
+                                                     {"$inc": {"rateCount": 1, "rateVal": new_rating}}, upsert=True)
+    else:
+        old_rating = rated_before['rating']
+        database[user_details_collection].update_one({"usr_id": rated_user_id['usr_id']},
+                                                     {"$inc": {"rateVal": new_rating - old_rating}}, upsert=True)
+
+    database[tour_guide_ratings_collection].update_one({"usr_id": request.user['id'], "rtd_usr_id": rated_user_id['usr_id']},
+                                                       {"$set": {"rating": new_rating}}, upsert=True)
+
+    return Response(status=status.HTTP_200_OK)
+
+
+@api_view(["GET"])
+def search_tour_guides_by_phrase(request, phrase):
+    page_size = 10
+    page_num = int(request.query_params['page_num'])
+    print("search_tour_guides_by_phrase page_num = {}".format(page_num))
+    docs = database[user_details_collection].find(
+        {'$text': {'$search': phrase}}, {'score': {'$meta': "textScore"}, "_id": 0, "nickname": 1,
+                                         "rateVal": 1, "rateCount": 1}).sort([('score', {'$meta': "textScore"})])\
+        .skip(((page_num - 1) * page_size) if page_num > 0 else 0).limit(page_size)
+    resp_list = []
+    for doc in docs:
+        del doc['score']
+        resp_list.append(doc)
+    return Response(status=status.HTTP_200_OK, data=resp_list)

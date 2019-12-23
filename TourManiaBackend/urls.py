@@ -20,15 +20,15 @@ from mongo_auth import views as mongo_auth_views
 from TourMania import views
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
     #path('mongo_auth/', include('mongo_auth.urls')),
-    path('mongo_auth/signup/', mongo_auth_views.signup),
+    path('mongo_auth/signup/', views.signup),
     path('mongo_auth/login/', views.login),
     path('tour/upsert/', views.upsert_tour),
     path('tour/images/upsert/', views.upsert_tour_images),
     path('tour/id/<_id>', views.get_tour_by_tour_id),
     path('tour/i/id/<tour_id>/', views.get_tour_images_by_tour_id),
-    path('tour/u/<username>/', views.get_tours_by_user),
+    path('tour/id/<tour_id>/rate', views.rate_tour),
+    path('tour/u/<username>/', views.get_full_tours_by_user),
     path('tour/u/<username>/overviews', views.get_nearby_tours_overviews_by_user),
     path('tour/images/by_id/', views.get_tour_images_by_tour_ids),
     path('tour/delete/<_id>/', views.delete_tour_by_id),
@@ -40,6 +40,8 @@ urlpatterns = [
     path('user/prefs/', views.update_user_settings),
     path('tour_guide/near', views.get_nearby_tour_guides),
     path('tour_guide', views.get_tour_guide_info),
+    path('tour_guide/<tour_guide_username>/rate', views.rate_tour_guide),
+    path('tour_guide/search/<phrase>', views.search_tour_guides_by_phrase),
 
     path('get_test/', views.get_test),
     path('hello/', views.get_hello),

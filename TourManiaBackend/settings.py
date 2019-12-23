@@ -92,7 +92,7 @@ MANGO_JWT_SETTINGS = {
     "db_user": "admin",
     "db_pass": "password",
     #"auth_collection": "user_profile",  # default is "user_profile"
-    "fields": ("email", "password", "nickname"),
+    "fields": ("email", "nickname"),
     "jwt_secret": SERVER_KEYS['jwt_secret'],
     "jwt_life": 365,  # default is 7 (in days)
     "secondary_username_field": "nickname"  # default is None

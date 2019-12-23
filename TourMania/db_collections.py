@@ -1,0 +1,5 @@
+tours_collection = "tours"
+tour_images_collection = "tour_images"
+tour_ratings_collection = "tour_ratings"
+user_details_collection = "user_details"
+tour_guide_ratings_collection = "tour_guide_ratings"
