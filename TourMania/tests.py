@@ -7,6 +7,9 @@ from bson.objectid import ObjectId
 import base64
 import pprint
 import time
+import datetime
+import jwt
+import secrets
 
 tours_collection = "tours"
 tour_images_collection = "tour_images"
@@ -134,11 +137,27 @@ def db_get_tour_guide_info():
     pp.pprint(docs.next())
 
 
+def get_favs():
+    skip_obj_ids = [ObjectId('5e09624fe30e565874d8751c')]
+    docs = database[user_details_collection].distinct('fav_trs', {'usr_id': 'ID_5fa9bda9-6bf0-4a6e-84f2-ed174a47199b'})
+    print(docs)
+    docs = database[tours_collection].find({'_id': {'$nin': skip_obj_ids, '$in': docs}}, {'usr_id': 0})
+    print('favs : {}'.format(list(docs)))
+
+
+def generate_token():
+    token = secrets.token_urlsafe()
+    exp = datetime.datetime.now() + datetime.timedelta(hours=8)
+    print("token : {}".format(token))
+    print("exp : {}".format(exp))
+    print(datetime.datetime.now() < exp)
+
+
 if __name__ == "__main__":
     database = connect_to_db()
 
-    start = time.clock()
-    db_get_tour_guide_info()
-    end = time.clock()
-    print("Operation time: {} s".format(end - start))
+    #start = time.clock()
+    get_favs()
+    #end = time.clock()
+    #print("Operation time: {} s".format(end - start))
 

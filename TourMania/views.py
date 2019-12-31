@@ -13,6 +13,7 @@ from rest_framework.exceptions import ValidationError
 from bson.objectid import ObjectId
 from bson.binary import Binary, BINARY_SUBTYPE
 import base64
+import secrets
 from TourMania.permissions import AuthenticationOptional, AuthenticatedOnly
 from TourMania.db_collections import *
 
@@ -62,8 +63,13 @@ def login(request):
                                         days=jwt_life)},
                                    jwt_secret, algorithm='HS256').decode('utf-8')
                 user_prefs = user['prefs'] if "prefs" in user else {}
+                if "subTo" in user:
+                    user_subTo = user['subTo']
+                    user_subTo['tour_id'] = str(user_subTo['tour_id'])
+                else:
+                    user_subTo = {}
                 return Response(status=status.HTTP_200_OK,
-                                data={"data": {"token": token, "prefs": user_prefs}})
+                                data={"data": {"token": token, "prefs": user_prefs, "subTo": user_subTo}})
             else:
                 return Response(status=status.HTTP_403_FORBIDDEN,
                                 data={"error_msg": messages.incorrect_password})
@@ -375,15 +381,11 @@ def get_fav_tours_by_user(request, username):  # excluding given obj ids
                 skip_obj_ids.append(ObjectId(id))
         print('favs skip_obj_ids : {}'.format(skip_obj_ids))
 
-    # Get user id based on username
-    docs = database[user_details_collection].find_one({'nickname': username}, {'usr_id': 1})
-    print('favs user id : {}'.format(docs['usr_id']))
-
     # Get favourite tours
-    docs = database[user_details_collection].distinct('fav_trs', {'usr_id': docs['usr_id'], 'fav_trs': {'$nin': skip_obj_ids}})
+    docs = database[user_details_collection].distinct('fav_trs', {'nickname': username})
     print('favs : {}'.format(docs))
 
-    docs = database[tours_collection].find({'_id': {'$in': docs}}, {'usr_id': 0})
+    docs = database[tours_collection].find({'_id': {'$nin': skip_obj_ids, '$in': docs}}, {'usr_id': 0})
     docs = list(docs)
     for doc in docs:
         doc["tour"]["trSrvrId"] = str(doc["_id"])
@@ -417,7 +419,7 @@ def get_nearby_tours(request):
 @api_view(["POST"])
 @permission_classes([AuthenticatedOnly])
 def update_user_settings(request):
-    print("add_tour_to_favourites : {}".format(request.data))
+    print("update_user_settings : {}".format(request.data))
     prefs_dict = {}
     if 'is_guide' in request.data:
         is_guide = True if request.data.get('is_guide')[0] == 't' else False
@@ -427,6 +429,8 @@ def update_user_settings(request):
     if 'share_loc' in request.data:
         share_loc = True if request.data.get('share_loc')[0] == 't' else False
         prefs_dict["prefs.share_loc"] = share_loc
+    if 'share_loc_token_ttl' in request.data:
+        prefs_dict["prefs.loc_ttl"] = int(request.data.get('share_loc_token_ttl'))
     update_result = database[user_details_collection].update_one({"usr_id": request.user['id']},
                                                                  {"$set": prefs_dict}, upsert=True)
     return Response(status=status.HTTP_200_OK)
@@ -561,3 +565,70 @@ def search_tour_guides_by_phrase(request, phrase):
         del doc['score']
         resp_list.append(doc)
     return Response(status=status.HTTP_200_OK, data=resp_list)
+
+
+### Location sharing components ###
+
+@api_view(["POST"])
+@permission_classes([AuthenticatedOnly])
+def update_tour_guide_location(request):
+    docs = database[user_details_collection].update_one({"usr_id": request.user['id']},
+                                                        {"$set": {"loc.val": [request.data["long"], request.data["lat"]]}})
+    return Response(status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+@permission_classes([AuthenticatedOnly])
+def get_tour_guide_location(request):
+    docs = database[user_details_collection].find_one({"loc.token": request.data['token'], 'loc.subs': request.user['id']},
+                                                      {"loc.val": 1, "loc.exp": 1, "prefs.share_loc": 1})
+    if docs is None or docs["loc"]["exp"] < datetime.datetime.now() or not docs["prefs"]["share_loc"]:
+        return Response(status=status.HTTP_401_UNAUTHORIZED)
+    else:
+        return Response(status=status.HTTP_200_OK, data={"long": docs["loc"]["val"][0], "lat": docs["loc"]["val"][1]})
+
+
+@api_view(["POST"])
+@permission_classes([AuthenticatedOnly])
+def subscribe_to_tour_guide_location(request):
+    docs = database[user_details_collection].find_one_and_update({"loc.token": request.data["token"]},
+                                                                 {"$addToSet": {"loc.subs": request.user['id']}},
+                                                                 {"loc.tour_id": 1})
+    print("subscribe_to_tour_guide_location docs : {}".format(docs))
+    if docs is None:
+        return Response(status=status.HTTP_401_UNAUTHORIZED)
+    else:
+        database[user_details_collection].update_one({"usr_id": request.user['id']},
+                                                     {"$set": {"subTo.token": request.data["token"],
+                                                               "subTo.tour_id": docs["loc"]["tour_id"]}})
+        return Response(status=status.HTTP_200_OK, data={"tour_id": str(docs["loc"]["tour_id"])})
+
+
+@api_view(["POST"])
+@permission_classes([AuthenticatedOnly])
+def revoke_sharing_location_token(request):
+    database[user_details_collection].update_one({"usr_id": request.user['id']}, {"$unset": {"loc": ""}})
+    return Response(status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+@permission_classes([AuthenticatedOnly])
+def get_location_sharing_token(request):
+    DEFAULT_TTL = 6
+    docs = database[user_details_collection].find_one({"usr_id": request.user['id']},
+                                                      {"loc.token": 1, "loc.exp": 1, "prefs.loc_ttl": 1})
+    print("get_location_sharing_token docs = {}".format(docs))
+    if "loc" in docs and "token" in docs["loc"] and docs["loc"]["exp"] > datetime.datetime.now():
+        data = {"token": docs["loc"]["token"]}
+    else:
+        loc_token = secrets.token_urlsafe()
+        if "prefs" in docs and "loc_ttl" in docs["prefs"]:
+            ttl = docs["prefs"]["loc_ttl"]
+        else:
+            ttl = DEFAULT_TTL
+        exp = datetime.datetime.now() + datetime.timedelta(hours=ttl)
+        database[user_details_collection].update_one({"usr_id": request.user['id']},
+                                                     {"$set": {"loc.token": loc_token, "loc.exp": exp,
+                                                               "loc.tour_id": ObjectId(request.data['tour_id'])}})
+        data = {"token": loc_token}
+    return Response(status=status.HTTP_200_OK, data=data)
