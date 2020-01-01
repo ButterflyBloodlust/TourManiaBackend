@@ -153,11 +153,143 @@ def generate_token():
     print(datetime.datetime.now() < exp)
 
 
+def db_nearby_tours_joined_with_tour_guides_old():
+    docs = database[tours_collection].aggregate([
+        # $geoNear has to be first stage in aggregation pipeline
+        {
+            "$geoNear": {
+                "near": [0.0, 0.0],
+                "distanceField": "dist.calculated",
+                "key": "tour.start_loc"
+            }
+        },
+        {
+            "$project": {'wpsWPics': 0, 'tags': 0}
+        },
+        # Join with user_info table
+        {
+            "$lookup": {
+                "from": user_details_collection,  # other table name
+                "localField": "usr_id",  # name of base table field
+                "foreignField": "usr_id",  # name of other table field
+                "as": "tour_guide"  # alias for other table
+            }
+        },
+        # {"$unwind": "$tours"},  # "$unwind" used for getting data in object or for one record only
+        {
+            "$project": {'usr_id': 0}
+        },
+    ])
+
+    pp = pprint.PrettyPrinter()
+    for doc in docs:
+        pp.pprint(doc)
+
+
+def db_nearby_tours_inner_joined_with_tour_guides():
+    docs = database[tours_collection].aggregate([
+        # $geoNear has to be first stage in aggregation pipeline
+        {
+            "$geoNear": {
+                "near": [0.0, 0.0],
+                "distanceField": "dist.calculated",
+                "key": "tour.start_loc"
+            }
+        },
+        {"$project": {'wpsWPics': 0, 'tags': 0, 'dist': 0}},
+        # Left join with user_info table
+        {
+            "$lookup": {
+                "from": user_details_collection,  # other table name
+                "let": {"uid": "$usr_id"},  # aliases for fields from main table
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    {"$eq": ["$usr_id", "$$uid"]},   # main join condition (i.e. which fields are used for join)
+                                    {"$eq": ["$prefs.is_guide", True]}  # "$eq": ["$prefs.is_guide", True]
+                                ]
+                            }
+                        }
+                    },
+                    {"$project": {'_id': 0, 'prefs.is_guide': 1}}
+                ],
+                "as": "is_guide"  # alias for other table
+            }
+        },
+        # Match only documents with right side join present (this results in inner join when combined with previous lookup query).
+        # Not needed since {"$unwind": "$is_guide"} removes entire docs with 'is_guide' empty.
+        #{
+        #    "$match": {
+        #        "is_guide": {"$ne": []}
+        #    }
+        #},
+        # "$unwind" used for flattening parts of result structure.
+        # preserveNullAndEmptyArrays: False effectively makes this also an inner join in this context.
+        {"$unwind": {
+            "path": "$is_guide",
+            "preserveNullAndEmptyArrays": False
+        }},
+        {"$project": {"usr_id": 0, }},
+        # Flatten field
+        {"$addFields": {"is_guide": "$is_guide.prefs.is_guide"}},
+        #{"$count": "doc_count"}
+    ])
+    pp = pprint.PrettyPrinter()
+    for doc in docs:
+        pp.pprint(doc)
+
+
+def db_nearby_tours_left_joined_with_tour_guides():
+    docs = database[tours_collection].aggregate([
+        # $geoNear has to be first stage in aggregation pipeline
+        {
+            "$geoNear": {
+                "near": [0.0, 0.0],
+                "distanceField": "dist.calculated",
+                "key": "tour.start_loc"
+            }
+        },
+        {"$project": {'wpsWPics': 0, 'tags': 0, 'dist': 0}},
+        # Left join with user_info table
+        {
+            "$lookup": {
+                "from": user_details_collection,  # other table name
+                "let": {"uid": "$usr_id"},  # aliases for fields from main table
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$eq": ["$usr_id", "$$uid"]   # main join condition (i.e. which fields are used for join)
+                            }
+                        }
+                    },
+                    {"$project": {'_id': 0, 'prefs.is_guide': 1}}
+                ],
+                "as": "author.is_guide"  # alias for other table
+            }
+        },
+        # "$unwind" used for flattening parts of result structure
+        {"$unwind": {
+            "path": "$author.is_guide",
+            "preserveNullAndEmptyArrays": True
+        }},
+        {"$project": {"usr_id": 0, }},
+        # Flatten field
+        {"$addFields": {"author.is_guide": "$author.is_guide.prefs.is_guide"}},
+        #{"$count": "doc_count"}
+    ])
+    pp = pprint.PrettyPrinter()
+    for doc in docs:
+        pp.pprint(doc)
+
+
 if __name__ == "__main__":
     database = connect_to_db()
 
     #start = time.clock()
-    get_favs()
+    db_nearby_tours_left_joined_with_tour_guides()
     #end = time.clock()
     #print("Operation time: {} s".format(end - start))
 

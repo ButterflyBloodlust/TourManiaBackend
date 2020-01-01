@@ -333,13 +333,46 @@ def search_tours_by_phrase(request, phrase):
     page_size = 10
     page_num = int(request.query_params['page_num'])
     print("search_tours_by_phrase page_num = {}".format(page_num))
-    docs = database[tours_collection].find(
-        {'$text': {'$search': phrase}}, {'score': {'$meta': "textScore"}, 'wpsWPics': 0, 'tags': 0, 'usr_id': 0}).sort(
-        [('score', {'$meta': "textScore"})]).skip(((page_num - 1) * page_size) if page_num > 0 else 0).limit(page_size)
+
+    docs = database[tours_collection].aggregate([
+        # $geoNear has to be first stage in aggregation pipeline
+        {"$match": {'$text': {'$search': phrase}}},
+        {"$project": {'score': {'$meta': "textScore"}, 'tour': 1, 'usr_id': 1}},
+        {"$sort": {"score": {"$meta": "textScore"}}},
+        {"$skip": (((page_num - 1) * page_size) if page_num > 0 else 0)},
+        {"$limit": page_size},
+        # Left join with user_info table
+        {
+            "$lookup": {
+                "from": user_details_collection,  # other table name
+                "let": {"uid": "$usr_id"},  # aliases for fields from main table
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$eq": ["$usr_id", "$$uid"]   # main join condition (i.e. which fields are used for join)
+                            }
+                        }
+                    },
+                    {"$project": {'_id': 0, 'prefs.is_guide': 1}}
+                ],
+                "as": "author.is_guide"  # alias for other table
+            }
+        },
+        # "$unwind" used for flattening parts of result structure
+        {"$unwind": {
+            "path": "$author.is_guide",
+            "preserveNullAndEmptyArrays": True
+        }},
+        {"$project": {"usr_id": 0, "score": 0}},
+        # Flatten field
+        {"$addFields": {"author.is_guide": "$author.is_guide.prefs.is_guide"}},
+        #{"$count": "doc_count"}
+    ])
+
     resp_list = []
     for doc in docs:
         doc['tour']['trSrvrId'] = str(doc['_id'])
-        del doc['score']
         del doc['_id']
         resp_list.append(doc)
     return Response(status=status.HTTP_200_OK, data=resp_list)
@@ -395,15 +428,51 @@ def get_fav_tours_by_user(request, username):  # excluding given obj ids
 
 
 @api_view(["GET"])
-def get_nearby_tours(request):
+def get_nearby_tours(request):  # uses aggregation to join results with user details collection, allowing for marking tour guide created tours
     print('get_nearby_tours input : {}'.format(float(request.query_params.get('long'))))
     page_size = 10
     page_num = int(request.query_params['page_num'])
 
-    docs = database[tours_collection].find({"tour.start_loc": {"$near": [float(request.query_params.get('long')),
-                                                                         float(request.query_params.get('lat'))]}},
-                                           {'wpsWPics': 0, 'tags': 0, 'usr_id': 0})\
-        .skip(((page_num - 1) * page_size) if page_num > 0 else 0).limit(page_size)
+    docs = database[tours_collection].aggregate([
+        # $geoNear has to be first stage in aggregation pipeline
+        {
+            "$geoNear": {
+                "near": [float(request.query_params.get('long')), float(request.query_params.get('lat'))],
+                "distanceField": "dist.calculated",
+                "key": "tour.start_loc"
+            }
+        },
+        {"$skip": (((page_num - 1) * page_size) if page_num > 0 else 0)},
+        {"$limit": page_size},
+        {"$project": {'wpsWPics': 0, 'tags': 0}},
+        # Left join with user_info table
+        {
+            "$lookup": {
+                "from": user_details_collection,  # other table name
+                "let": {"uid": "$usr_id"},  # aliases for fields from main table
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$eq": ["$usr_id", "$$uid"]   # main join condition (i.e. which fields are used for join)
+                            }
+                        }
+                    },
+                    {"$project": {'_id': 0, 'prefs.is_guide': 1}}
+                ],
+                "as": "author.is_guide"  # alias for other table
+            }
+        },
+        # "$unwind" used for flattening parts of result structure
+        {"$unwind": {
+            "path": "$author.is_guide",
+            "preserveNullAndEmptyArrays": True
+        }},
+        {"$project": {"usr_id": 0, }},
+        # Flatten field
+        {"$addFields": {"author.is_guide": "$author.is_guide.prefs.is_guide"}},
+        #{"$count": "doc_count"}
+    ])
 
     resp_list = []
     for doc in docs:
