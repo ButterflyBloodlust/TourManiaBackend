@@ -203,7 +203,6 @@ def upsert_tour_images(request):
         i += 1
 
     img_data = {'trSrvrId': tour_id,
-                'username': request.user['nickname'],
                 'imgs': imgs_dict
                 }
     database[tour_images_collection].update_one({'trSrvrId': tour_id},
@@ -220,7 +219,9 @@ def get_tour_by_tour_id(request, _id):
         del doc['_id']
 
         doc['author'] = {}
-        doc['author']['nickname'] = database[user_details_collection].find_one({'usr_id': doc['usr_id']})['nickname']
+        user_doc = database[user_details_collection].find_one({'usr_id': doc['usr_id']})
+        doc['author']['nickname'] = user_doc['nickname']
+        doc['author']['is_guide'] = user_doc['prefs']['is_guide']
         del doc['usr_id']
 
         if request.user is not None:
@@ -276,15 +277,18 @@ def get_full_tours_by_user(request, username):  # excluding given obj ids
         print('get_full_tours_by_user skip_obj_ids : {}'.format(skip_obj_ids))
 
     # Get user id based on username
-    docs = database[user_details_collection].find_one({'nickname': username}, {'usr_id': 1})
+    doc_user = database[user_details_collection].find_one({'nickname': username}, {'usr_id': 1, 'prefs.is_guide': 1})
 
     # Get user tours based on user id and with skipping _ids from skip_obj_ids
-    docs = database[tours_collection].find({'usr_id': docs['usr_id'], '_id': {'$nin': skip_obj_ids}}, {'usr_id': 0})
+    docs = database[tours_collection].find({'usr_id': doc_user['usr_id'], '_id': {'$nin': skip_obj_ids}}, {'usr_id': 0})
 
     docs = list(docs)
     for doc in docs:
         doc["tour"]["trSrvrId"] = str(doc["_id"])
         del doc["_id"]
+        doc['author'] = {}
+        doc['author']['is_guide'] = doc_user['prefs']['is_guide']
+        doc['author']['nickname'] = username
         #del doc["username"]
     print('get_full_tours_by_user {}'.format(docs))
     return Response(status=status.HTTP_200_OK, data=docs)
@@ -415,10 +419,64 @@ def get_fav_tours_by_user(request, username):  # excluding given obj ids
         print('favs skip_obj_ids : {}'.format(skip_obj_ids))
 
     # Get favourite tours
-    docs = database[user_details_collection].distinct('fav_trs', {'nickname': username})
-    print('favs : {}'.format(docs))
+    doc_user = database[user_details_collection].find_one({'nickname': username}, {'fav_trs': 1, 'usr_id': 1})
+    print('favs : {}'.format(doc_user))
 
-    docs = database[tours_collection].find({'_id': {'$nin': skip_obj_ids, '$in': docs}}, {'usr_id': 0})
+    docs = database[tours_collection].aggregate([
+        {"$match": {'_id': {'$nin': skip_obj_ids, '$in': doc_user['fav_trs']}}},
+        # Left join with tour_ratings_collection
+        {
+            "$lookup": {
+                "from": tour_ratings_collection,  # other table name
+                "let": {"uid": "$usr_id", "tr_id": "$_id"},  # aliases for fields from main table
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    {"$eq": ["$usr_id", doc_user['usr_id']]},  # main join condition (i.e. which fields are used for join)
+                                    {"$eq": ["$tour_id", "$$tr_id"]}
+                                ]
+                            }
+                        }
+                    },
+                    {"$project": {'_id': 0, 'rating': 1}}
+                ],
+                "as": "tour_rating"  # alias for other table
+            }
+        },
+        {"$unwind": {
+            "path": "$tour_rating",
+            "preserveNullAndEmptyArrays": True
+        }},
+        {"$addFields": {"tour.rating": "$tour_rating.rating"}},
+        {"$project": {'tour_rating': 0}},
+        # Left join with user_info table
+        {
+            "$lookup": {
+                "from": user_details_collection,  # other table name
+                "let": {"uid": "$usr_id"},  # aliases for fields from main table
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$eq": ["$usr_id", "$$uid"]   # main join condition (i.e. which fields are used for join)
+                            }
+                        }
+                    },
+                    {"$project": {'_id': 0, 'nickname': '$nickname', 'is_guide': '$prefs.is_guide'}}
+                ],
+                "as": "author"  # alias for other table
+            }
+        },
+        {"$project": {"usr_id": 0}},
+        {"$unwind": {
+            "path": "$author",
+            "preserveNullAndEmptyArrays": True
+        }},
+        #{"$count": "doc_count"}
+    ])
+
     docs = list(docs)
     for doc in docs:
         doc["tour"]["trSrvrId"] = str(doc["_id"])
@@ -701,3 +759,45 @@ def get_location_sharing_token(request):
                                                                "loc.tour_id": ObjectId(request.data['tour_id'])}})
         data = {"token": loc_token}
     return Response(status=status.HTTP_200_OK, data=data)
+
+
+@api_view(["POST"])
+@permission_classes([AuthenticatedOnly])
+def update_user_image(request):
+    print("update_user_image : {}".format(request.data))
+    if 'tg_img' not in request.data:
+        return Response(status=status.HTTP_400_BAD_REQUEST)
+    tg_img = request.data.get('tg_img')
+    img_dict = {'mime': tg_img.content_type, 'b': Binary(tg_img.file.read(), BINARY_SUBTYPE)}
+    update_result = database[user_details_collection].update_one({"usr_id": request.user['id']},
+                                                                 {"$set": {'img': img_dict}}, upsert=True)
+    return Response(status=status.HTTP_200_OK)
+
+
+@api_view(["GET"])
+@permission_classes([AuthenticatedOnly])
+def get_tour_guide_image(request):
+    # print(request.header)
+    # print(request.data)
+    doc = database[user_details_collection].find_one({"usr_id": request.user['id']}, {'_id': 0, 'img': 1})
+    doc['img']['b'] = base64.b64encode(doc['img']['b'])
+    print(doc)
+    # print(resp_list)
+    return Response(status=status.HTTP_200_OK, data=doc['img'])
+
+
+@api_view(["POST"])
+def get_tour_guides_images_by_nicknames(request):  # including given obj ids
+    # print(request.header)
+    # print(request.data)
+    docs = database[user_details_collection].find({'nickname': {'$in': request.data}}, {'_id': 0, 'nickname': 1, 'img': 1})
+    resp_list = []
+    for doc in docs:
+        print('get_tour_guides_images_by_nicknames : {}'.format(doc))
+        if 'img' in doc:
+            img = doc["img"]
+            if 'b' in img:
+                img["b"] = base64.b64encode(img["b"])
+        resp_list.append(doc)
+    # print(resp_list)
+    return Response(status=status.HTTP_200_OK, data=resp_list)

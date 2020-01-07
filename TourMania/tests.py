@@ -285,11 +285,15 @@ def db_nearby_tours_left_joined_with_tour_guides():
         pp.pprint(doc)
 
 
+def db_migrate():
+    database[tour_images_collection].update_many({}, {"$unset": {"username": 1}})
+
+
 if __name__ == "__main__":
     database = connect_to_db()
 
     #start = time.clock()
-    db_nearby_tours_left_joined_with_tour_guides()
+    db_migrate()
     #end = time.clock()
     #print("Operation time: {} s".format(end - start))
 

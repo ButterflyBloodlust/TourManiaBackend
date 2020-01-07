@@ -42,6 +42,8 @@ urlpatterns = [
     path('tour_guide', views.get_tour_guide_info),
     path('tour_guide/<tour_guide_username>/rate', views.rate_tour_guide),
     path('tour_guide/search/<phrase>', views.search_tour_guides_by_phrase),
+    path('tour_guide/image/upsert', views.update_user_image),
+    path('tour_guide/image/get', views.get_tour_guide_image),
 
     ### Location sharing components ###
     path('tour_guide/loc/update', views.update_tour_guide_location),
@@ -49,6 +51,7 @@ urlpatterns = [
     path('tour_guide/loc/sub', views.subscribe_to_tour_guide_location),
     path('tour_guide/loc/token', views.get_location_sharing_token),
     path('tour_guide/loc/token/revoke', views.revoke_sharing_location_token),
+    path('tour_guide/image/by_nickname/', views.get_tour_guides_images_by_nicknames),
 
     path('get_test/', views.get_test),
     path('hello/', views.get_hello),
