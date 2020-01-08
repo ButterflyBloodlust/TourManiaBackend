@@ -5,6 +5,6 @@ django-rest-framework
 pymongo
 mango-jwt
 bson
-jwt
+pyjwt
 passlib
 dnspython
