@@ -1,5 +1,5 @@
 import traceback
-
+import os
 from django.shortcuts import render
 from rest_framework.decorators import permission_classes, api_view
 from TourMania.utils import create_unique_object_id, pwd_context
@@ -39,7 +39,11 @@ def get_hello(request):
 def get_hello_db(request):
     content = {'message': 'Hello, World!'}
     docs = database['users'].find({})
-    print(list(docs))
+    print(os.environ.get('MONGO_HOST'))
+    print(os.environ.get('MONGO_DB_NAME'))
+    print(os.environ.get('MONGO_USER'))
+    print(os.environ.get('MONGO_PASSWORD'))
+    #print(list(docs))
     return Response(content)  # json.dumps(doc, sort_keys=True, indent=4, default=json_util.default)
 
 
