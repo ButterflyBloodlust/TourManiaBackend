@@ -1,0 +1,7 @@
+django
+gunicorn
+django-heroku
+django-rest-framework
+pymongo
+mango-jwt
+bson
