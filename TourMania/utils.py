@@ -1,7 +1,24 @@
+'''
+    Modified version of mango-jwt utils.py. Mango-jwt is distributed under MIT license.
+'''
+
+import uuid
 import jwt
-from mongo_auth.db import jwt_secret, auth_collection
-from mongo_auth.db import database
+from passlib.context import CryptContext
+from TourMania.mongo_db import jwt_secret, auth_collection, database
 from TourMania.db_collections import user_details_collection
+
+
+pwd_context = CryptContext(
+    default="django_pbkdf2_sha256",
+    schemes=["django_argon2", "django_bcrypt", "django_bcrypt_sha256",
+             "django_pbkdf2_sha256", "django_pbkdf2_sha1",
+             "django_disabled"])
+
+
+def create_unique_object_id():
+    unique_object_id = "ID_{uuid}".format(uuid=uuid.uuid4())
+    return unique_object_id
 
 
 def login_status(request):

@@ -85,14 +85,14 @@ DATABASES = {
 }
 
 MANGO_JWT_SETTINGS = {
-    "db_host": "localhost",
-    "db_port": "27017",
-    "db_name": "tour-mania",
-    "db_user": "admin",
-    "db_pass": "password",
+    "db_host": os.environ.get('MONGO_HOST'),
+    # "db_port": "27017",
+    "db_name": os.environ.get('MONGO_DB_NAME'),
+    "db_user": os.environ.get('MONGO_USER'),
+    "db_pass": os.environ.get('MONGO_PASSWORD'),
     #"auth_collection": "user_profile",  # default is "user_profile"
     "fields": ("email", "nickname"),
-    "jwt_secret": os.environ.get('jwt_secret'),
+    "jwt_secret": os.environ.get('JWT_SECRET'),
     "jwt_life": 365,  # default is 7 (in days)
     "secondary_username_field": "nickname"  # default is None
 }

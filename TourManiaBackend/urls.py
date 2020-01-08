@@ -15,8 +15,6 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-
-from mongo_auth import views as mongo_auth_views
 from TourMania import views
 
 urlpatterns = [

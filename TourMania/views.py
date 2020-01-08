@@ -2,8 +2,8 @@ import traceback
 
 from django.shortcuts import render
 from rest_framework.decorators import permission_classes, api_view
-from mongo_auth.utils import create_unique_object_id, pwd_context
-from mongo_auth.db import database, auth_collection, fields, jwt_life, jwt_secret, secondary_username_field
+from TourMania.utils import create_unique_object_id, pwd_context
+from TourMania.mongo_db import database, auth_collection, fields, jwt_life, jwt_secret, secondary_username_field
 import jwt
 import datetime
 from mongo_auth import messages
