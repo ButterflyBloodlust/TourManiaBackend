@@ -22,7 +22,7 @@ from TourMania.db_collections import *
 @permission_classes([AuthenticatedOnly])
 def get_test(request):
     try:
-        print(request.user)
+        # print(request.user)
         return Response(status=status.HTTP_200_OK,
                         data={"data": {"msg": "User Authenticated"}})
     except:
@@ -39,11 +39,6 @@ def get_hello(request):
 def get_hello_db(request):
     content = {'message': 'Hello, World!'}
     docs = database['users'].find({})
-    print(os.environ.get('MONGO_HOST'))
-    print(os.environ.get('MONGO_DB_NAME'))
-    print(os.environ.get('MONGO_USER'))
-    print(os.environ.get('MONGO_PASSWORD'))
-    #print(list(docs))
     return Response(content)  # json.dumps(doc, sort_keys=True, indent=4, default=json_util.default)
 
 
@@ -182,7 +177,7 @@ def upsert_tour(request):
                                                                  "tour_id": result,
                                                                  "loc": request.data["tour"]["start_loc"]}}},
                                                          upsert=True)
-    print("> result : {}".format(result))
+    # print("> result : {}".format(result))
     # print(data)
     return Response(status=status.HTTP_200_OK, data=data)
 
@@ -232,7 +227,7 @@ def get_tour_by_tour_id(request, _id):
             # Check if tour is in given username favourites
             # Get favourite tours
             is_fav_doc = database[user_details_collection].distinct('fav_trs', {'usr_id': request.user['id']})
-            print('get_tour_by_tour_id fav : {}'.format(len(is_fav_doc)))
+            # print('get_tour_by_tour_id fav : {}'.format(len(is_fav_doc)))
 
             if len(is_fav_doc) > 0:
                 doc['tour']['in_favs'] = True
@@ -244,7 +239,7 @@ def get_tour_by_tour_id(request, _id):
             if rating_doc is not None:
                 doc['tour']['rating'] = rating_doc['rating']
 
-        print('get_tour_by_id : {}'.format(doc))
+        # print('get_tour_by_id : {}'.format(doc))
         return Response(status=status.HTTP_200_OK, data=doc)
     else:
         return Response(status=status.HTTP_400_BAD_REQUEST)
@@ -278,7 +273,7 @@ def get_full_tours_by_user(request, username):  # excluding given obj ids
         for id in data_dict['owndToursIds']:
             if len(id) == 24:
                 skip_obj_ids.append(ObjectId(id))
-        print('get_full_tours_by_user skip_obj_ids : {}'.format(skip_obj_ids))
+        # print('get_full_tours_by_user skip_obj_ids : {}'.format(skip_obj_ids))
 
     # Get user id based on username
     doc_user = database[user_details_collection].find_one({'nickname': username}, {'usr_id': 1, 'prefs.is_guide': 1})
@@ -294,7 +289,7 @@ def get_full_tours_by_user(request, username):  # excluding given obj ids
         doc['author']['is_guide'] = doc_user['prefs']['is_guide']
         doc['author']['nickname'] = username
         #del doc["username"]
-    print('get_full_tours_by_user {}'.format(docs))
+    # print('get_full_tours_by_user {}'.format(docs))
     return Response(status=status.HTTP_200_OK, data=docs)
 
 
@@ -303,7 +298,7 @@ def get_tour_images_by_tour_ids(request):  # including given obj ids
     # print(request.header)
     # print(request.data)
     incl_wps = True if request.query_params['incl_wps'][0] == 't' else False
-    print("incl_wps = {}".format(incl_wps))
+    # print("incl_wps = {}".format(incl_wps))
     docs = database[tour_images_collection].find({'trSrvrId': {'$in': request.data}}, {'_id': 0, 'usr_id': 0})
     resp_list = []
     for doc in docs:
@@ -323,7 +318,7 @@ def delete_tour_by_id(request, _id):
     if len(_id) == 24:
         delete_result = database[tours_collection].delete_one(
             {'_id': ObjectId(_id), 'usr_id': request.user["id"]})
-        print('deleted records: {}'.format(delete_result.deleted_count))
+        # print('deleted records: {}'.format(delete_result.deleted_count))
         if delete_result.deleted_count > 0:
             database[tour_images_collection].remove({'trSrvrId': _id})
             database[user_details_collection].update_one({"usr_id": request.user["id"]},
@@ -340,7 +335,7 @@ def delete_tour_by_id(request, _id):
 def search_tours_by_phrase(request, phrase):
     page_size = 10
     page_num = int(request.query_params['page_num'])
-    print("search_tours_by_phrase page_num = {}".format(page_num))
+    # print("search_tours_by_phrase page_num = {}".format(page_num))
 
     docs = database[tours_collection].aggregate([
         # $geoNear has to be first stage in aggregation pipeline
@@ -390,7 +385,7 @@ def search_tours_by_phrase(request, phrase):
 @permission_classes([AuthenticatedOnly])
 def add_tour_to_favourites(request):
     tour_id = request.data.get('trSrvrId')
-    print("add_tour_to_favourites : {}".format(request.data.get('trSrvrId')))
+    # print("add_tour_to_favourites : {}".format(request.data.get('trSrvrId')))
     if len(tour_id) == 24:
         update_result = database[user_details_collection].update_one({"usr_id": request.user['id']},
                                                                      {"$addToSet": {"fav_trs": ObjectId(tour_id)}}, upsert=True)
@@ -402,8 +397,8 @@ def add_tour_to_favourites(request):
 @api_view(["DELETE"])
 @permission_classes([AuthenticatedOnly])
 def delete_tour_from_favourites(request, tour_id):
-    print("delete_tour_from_favourites tour_id : {}".format(tour_id))
-    print("delete_tour_from_favourites request.data : {}".format(request.data))
+    # print("delete_tour_from_favourites tour_id : {}".format(tour_id))
+    # print("delete_tour_from_favourites request.data : {}".format(request.data))
     if len(tour_id) == 24:
         update_result = database[user_details_collection].update_one({"usr_id": request.user['id']},
                                                                      {"$pull": {"fav_trs": ObjectId(tour_id)}})
@@ -420,11 +415,11 @@ def get_fav_tours_by_user(request, username):  # excluding given obj ids
         for id in data_dict['owndToursIds']:
             if len(id) == 24:
                 skip_obj_ids.append(ObjectId(id))
-        print('favs skip_obj_ids : {}'.format(skip_obj_ids))
+        # print('favs skip_obj_ids : {}'.format(skip_obj_ids))
 
     # Get favourite tours
     doc_user = database[user_details_collection].find_one({'nickname': username}, {'fav_trs': 1, 'usr_id': 1})
-    print('favs : {}'.format(doc_user))
+    # print('favs : {}'.format(doc_user))
 
     docs = database[tours_collection].aggregate([
         {"$match": {'_id': {'$nin': skip_obj_ids, '$in': doc_user['fav_trs']}}},
@@ -485,13 +480,13 @@ def get_fav_tours_by_user(request, username):  # excluding given obj ids
     for doc in docs:
         doc["tour"]["trSrvrId"] = str(doc["_id"])
         del doc["_id"]
-    print('get_fav_tours_by_user {}'.format(docs))
+    # print('get_fav_tours_by_user {}'.format(docs))
     return Response(status=status.HTTP_200_OK, data=docs)
 
 
 @api_view(["GET"])
 def get_nearby_tours(request):  # uses aggregation to join results with user details collection, allowing for marking tour guide created tours
-    print('get_nearby_tours input : {}'.format(float(request.query_params.get('long'))))
+    # print('get_nearby_tours input : {}'.format(float(request.query_params.get('long'))))
     page_size = 10
     page_num = int(request.query_params['page_num'])
 
@@ -543,14 +538,14 @@ def get_nearby_tours(request):  # uses aggregation to join results with user det
         resp_list.append(doc)
         # print('get_nearby_tours tour : {}'.format(doc['tour']['title']))
 
-    print('get_nearby_tours response : {}'.format(resp_list))
+    # print('get_nearby_tours response : {}'.format(resp_list))
     return Response(status=status.HTTP_200_OK, data=resp_list)
 
 
 @api_view(["POST"])
 @permission_classes([AuthenticatedOnly])
 def update_user_settings(request):
-    print("update_user_settings : {}".format(request.data))
+    # print("update_user_settings : {}".format(request.data))
     prefs_dict = {}
     if 'is_guide' in request.data:
         is_guide = True if request.data.get('is_guide')[0] == 't' else False
@@ -631,7 +626,7 @@ def get_nearby_tours_overviews_by_user(request, username):  # with pagination
         doc["tour"]["trSrvrId"] = str(doc["_id"])
         del doc["_id"]
 
-    print('get_nearby_tours_overviews_by_user {}'.format(docs))
+    # print('get_nearby_tours_overviews_by_user {}'.format(docs))
     return Response(status=status.HTTP_200_OK, data=docs)
 
 
@@ -686,7 +681,7 @@ def rate_tour_guide(request, tour_guide_username):
 def search_tour_guides_by_phrase(request, phrase):
     page_size = 10
     page_num = int(request.query_params['page_num'])
-    print("search_tour_guides_by_phrase page_num = {}".format(page_num))
+    # print("search_tour_guides_by_phrase page_num = {}".format(page_num))
     docs = database[user_details_collection].find(
         {'$text': {'$search': phrase}}, {'score': {'$meta': "textScore"}, "_id": 0, "nickname": 1,
                                          "rateVal": 1, "rateCount": 1}).sort([('score', {'$meta': "textScore"})])\
@@ -725,7 +720,7 @@ def subscribe_to_tour_guide_location(request):
     docs = database[user_details_collection].find_one_and_update({"loc.token": request.data["token"]},
                                                                  {"$addToSet": {"loc.subs": request.user['id']}},
                                                                  {"loc.tour_id": 1})
-    print("subscribe_to_tour_guide_location docs : {}".format(docs))
+    # print("subscribe_to_tour_guide_location docs : {}".format(docs))
     if docs is None:
         return Response(status=status.HTTP_401_UNAUTHORIZED)
     else:
@@ -748,7 +743,7 @@ def get_location_sharing_token(request):
     DEFAULT_TTL = 6
     docs = database[user_details_collection].find_one({"usr_id": request.user['id']},
                                                       {"loc.token": 1, "loc.exp": 1, "prefs.loc_ttl": 1})
-    print("get_location_sharing_token docs = {}".format(docs))
+    # print("get_location_sharing_token docs = {}".format(docs))
     if "loc" in docs and "token" in docs["loc"] and docs["loc"]["exp"] > datetime.datetime.now():
         data = {"token": docs["loc"]["token"]}
     else:
@@ -768,7 +763,7 @@ def get_location_sharing_token(request):
 @api_view(["POST"])
 @permission_classes([AuthenticatedOnly])
 def update_user_image(request):
-    print("update_user_image : {}".format(request.data))
+    # print("update_user_image : {}".format(request.data))
     if 'tg_img' not in request.data:
         return Response(status=status.HTTP_400_BAD_REQUEST)
     tg_img = request.data.get('tg_img')
@@ -785,7 +780,7 @@ def get_tour_guide_image(request):
     # print(request.data)
     doc = database[user_details_collection].find_one({"usr_id": request.user['id']}, {'_id': 0, 'img': 1})
     doc['img']['b'] = base64.b64encode(doc['img']['b'])
-    print(doc)
+    # print(doc)
     # print(resp_list)
     return Response(status=status.HTTP_200_OK, data=doc['img'])
 
@@ -797,7 +792,7 @@ def get_tour_guides_images_by_nicknames(request):  # including given obj ids
     docs = database[user_details_collection].find({'nickname': {'$in': request.data}}, {'_id': 0, 'nickname': 1, 'img': 1})
     resp_list = []
     for doc in docs:
-        print('get_tour_guides_images_by_nicknames : {}'.format(doc))
+        # print('get_tour_guides_images_by_nicknames : {}'.format(doc))
         if 'img' in doc:
             img = doc["img"]
             if 'b' in img:
