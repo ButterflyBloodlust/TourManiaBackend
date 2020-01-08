@@ -11,7 +11,6 @@ https://docs.djangoproject.com/en/2.2/ref/settings/
 """
 
 import os
-from TourManiaBackend.keys import SERVER_KEYS
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,7 +20,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # See https://docs.djangoproject.com/en/2.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = SERVER_KEYS['SECRET_KEY']
+SECRET_KEY = os.environ.get('SECRET_KEY'),
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -93,7 +92,7 @@ MANGO_JWT_SETTINGS = {
     "db_pass": "password",
     #"auth_collection": "user_profile",  # default is "user_profile"
     "fields": ("email", "nickname"),
-    "jwt_secret": SERVER_KEYS['jwt_secret'],
+    "jwt_secret": os.environ.get('jwt_secret'),
     "jwt_life": 365,  # default is 7 (in days)
     "secondary_username_field": "nickname"  # default is None
 }
