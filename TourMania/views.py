@@ -38,8 +38,8 @@ def get_hello(request):
 @api_view(["GET"])
 def get_hello_db(request):
     content = {'message': 'Hello, World!'}
-    doc = database['users'].find({})
-    print(doc)
+    docs = database['users'].find({})
+    print(list(docs))
     return Response(content)  # json.dumps(doc, sort_keys=True, indent=4, default=json_util.default)
 
 
