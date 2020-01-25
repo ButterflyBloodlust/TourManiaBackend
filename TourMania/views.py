@@ -91,6 +91,7 @@ def login(request):
 def signup(request):
     try:
         data = request.data if request.data is not None else {}
+        print('>>>> data: {}'.format(data))
         if "password" not in data:
             return Response(status=status.HTTP_400_BAD_REQUEST,
                             data={"error_msg": "password does not exist."})
